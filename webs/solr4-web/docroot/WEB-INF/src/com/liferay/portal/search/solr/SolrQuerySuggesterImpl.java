@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2000-2012 Liferay, Inc. All rights reserved.
+ * Copyright (c) 2000-2013 Liferay, Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.io.StringReader;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -50,8 +49,9 @@ import org.apache.solr.common.SolrDocumentList;
 public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 	implements QuerySuggester {
 
-	public void searchTokenSimilars(Locale locale, String token,
-			SolrQuery solrQuery, Map<String, Float> words)
+	public void searchTokenSimilars(
+			Locale locale, String token, SolrQuery solrQuery,
+			Map<String, Float> words)
 		throws SearchException {
 
 		solrQuery.addFilterQuery("spellcheck:true");
@@ -73,10 +73,12 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 
 				SolrDocument solrDocument = solrDocumentList.get(i);
 
-				String suggestion =
-					((List<String>)solrDocument.get("word")).get(0);
-				String strWeight =
-					((List<String>)solrDocument.get("weight")).get(0);
+				String suggestion = ((List<String>)solrDocument.get(
+					"word")).get(0);
+
+				String strWeight = ((List<String>)solrDocument.get(
+					"weight")).get(0);
+
 				float weight = Float.parseFloat(strWeight);
 
 				if (suggestion.equalsIgnoreCase(token)) {
@@ -109,7 +111,6 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 
 			throw new SearchException(e.getMessage());
 		}
-
 	}
 
 	public void setCollationMaker(CollationMaker collationMaker) {
@@ -144,16 +145,14 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 			SearchContext searchContext, int maxSuggestions)
 		throws SearchException {
 
-		Map<String, List<String>> suggestions =	new HashMap<String, List<String>>();
+		Map<String, List<String>> suggestions = new HashMap<String, List<String>>();
 
-		Locale locale = searchContext.getLocale();
-
-		List<String> originals = tokenize(searchContext.getKeywords(), locale);
+		List<String> originals = tokenize(
+			searchContext.getKeywords(), searchContext.getLocale());
 
 		for (String original : originals) {
-
 			List<String> similarTokens = suggestTokenSimilars(
-				locale, maxSuggestions, original);
+				searchContext.getLocale(), maxSuggestions, original);
 
 			suggestions.put(original, similarTokens);
 		}
@@ -180,7 +179,7 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 
 		String companyIdFilterQuery = Field.COMPANY_ID.concat(
 			StringPool.COLON).concat(
-			Long.toString(searchContext.getCompanyId()));
+				Long.toString(searchContext.getCompanyId()));
 
 		solrQuery.setFilterQueries(companyIdFilterQuery);
 
@@ -215,9 +214,7 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 			Locale locale, int maxSuggestions, String token)
 		throws SearchException {
 
-		int length = token.length();
-		Map<String, Object> nGramsMap =
-			buildNGrams(token, getMin(length), getMax(length));
+		Map<String, Object> nGramsMap = buildNGrams(token);
 
 		SolrQuery solrQuery = createGramsQuery(nGramsMap, token);
 
@@ -226,6 +223,7 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 		searchTokenSimilars(locale, token, solrQuery, words);
 
 		ValueComparator valueComparator = new ValueComparator(words);
+
 		TreeMap<String, Float> sortedWords = new TreeMap<String, Float>(valueComparator);
 
 		sortedWords.putAll(words);
@@ -233,12 +231,11 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 		List<String> listWords = new ArrayList(sortedWords.keySet());
 
 		return listWords.subList(0, Math.min(maxSuggestions, listWords.size()));
-
 	}
 
 	private String addGramQuery(String fieldName, String fieldValue) {
 
-		StringBundler sb =new StringBundler(6);
+		StringBundler sb = new StringBundler(6);
 
 		sb.append(fieldName);
 		sb.append(StringPool.COLON);
@@ -265,6 +262,7 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 		Map<String, Object> nGramsMap, String token) {
 
 		SolrQuery solrQuery = new SolrQuery();
+
 		StringBundler sb = new StringBundler(10);
 
 		for (Map.Entry entry : nGramsMap.entrySet()) {
@@ -273,7 +271,6 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 			if (entry.getValue() instanceof String) {
 				sb.append(addGramQuery(key, (String)entry.getValue()));
 			}
-
 			else if (entry.getValue() instanceof List) {
 				sb.append(addGramsQuery(key, (List)entry.getValue()));
 			}
@@ -326,6 +323,6 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 
 	private String _suggesterURL = "/select";
 
-	private float _threshold = 0.8f;
+	private float _threshold;
 
 }

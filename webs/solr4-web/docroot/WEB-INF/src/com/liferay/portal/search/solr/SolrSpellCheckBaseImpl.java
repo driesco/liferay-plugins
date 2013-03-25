@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2000-2012 Liferay, Inc. All rights reserved.
+ * Copyright (c) 2000-2013 Liferay, Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -39,14 +39,15 @@ public class SolrSpellCheckBaseImpl {
 		_analyzer = analyzer;
 	}
 
-	protected Map<String, Object> buildNGrams(String input, int ng1, int ng2)
+	protected Map<String, Object> buildNGrams(String input)
 		throws SearchException {
 
-		Map<String, Object> ngramsMap =
-			new HashMap<String, Object>();
+		Map<String, Object> ngramsMap = new HashMap<String, Object>();
 
-		NGramTokenizer nGramTokenizer =
-			new NGramTokenizer(new StringReader(input), ng1, ng2);
+		int length = input.length();
+
+		NGramTokenizer nGramTokenizer = new NGramTokenizer(
+			new StringReader(input), getMin(length), getMax(length));
 
 		CharTermAttribute charTermAttribute = nGramTokenizer.getAttribute(
 			CharTermAttribute.class);
@@ -58,18 +59,15 @@ public class SolrSpellCheckBaseImpl {
 		List<String> gram4 = new ArrayList<String>();
 
 		try {
-
-			int length = input.length();
-
 			while (nGramTokenizer.incrementToken()) {
 				String nGram = charTermAttribute.toString();
 				int nGramSize = charTermAttribute.length();
 
 				if (nGramSize == 2) {
-					if(offsetAttribute.startOffset() == 0){
+					if (offsetAttribute.startOffset() == 0) {
 						ngramsMap.put("start2", nGram);
 					}
-					else if(offsetAttribute.endOffset() == length){
+					else if (offsetAttribute.endOffset() == length) {
 						ngramsMap.put("end2", nGram);
 					}
 					else {
@@ -77,10 +75,11 @@ public class SolrSpellCheckBaseImpl {
 					}
 				}
 				else if (nGramSize == 3) {
-					if(offsetAttribute.startOffset() == 0){
+					if (offsetAttribute.startOffset() == 0) {
 						ngramsMap.put("start3", nGram);
 					}
-					if(offsetAttribute.endOffset() == length){
+
+					if (offsetAttribute.endOffset() == length) {
 						ngramsMap.put("end3", nGram);
 					}
 					else {
@@ -88,10 +87,11 @@ public class SolrSpellCheckBaseImpl {
 					}
 				}
 				else if (nGramSize == 4) {
-					if(offsetAttribute.startOffset() == 0){
+					if (offsetAttribute.startOffset() == 0) {
 						ngramsMap.put("start4", nGram);
 					}
-					if(offsetAttribute.endOffset() == length){
+
+					if (offsetAttribute.endOffset() == length) {
 						ngramsMap.put("end4", nGram);
 					}
 					else {
@@ -103,24 +103,25 @@ public class SolrSpellCheckBaseImpl {
 				}
 			}
 
-			if (!gram2.isEmpty())
+			if (!gram2.isEmpty()) {
 				ngramsMap.put("gram2", gram2);
+			}
 
-			if (!gram3.isEmpty())
+			if (!gram3.isEmpty()) {
 				ngramsMap.put("gram3", gram3);
+			}
 
-			if (!gram4.isEmpty())
+			if (!gram4.isEmpty()) {
 				ngramsMap.put("gram4", gram4);
+			}
 
 			return ngramsMap;
-
 		}
 		catch (IOException e) {
 			e.printStackTrace();
 
 			throw new SearchException();
 		}
-
 	}
 
 	protected int getMax(int l) {
@@ -142,4 +143,5 @@ public class SolrSpellCheckBaseImpl {
 	}
 
 	protected Analyzer _analyzer;
+
 }

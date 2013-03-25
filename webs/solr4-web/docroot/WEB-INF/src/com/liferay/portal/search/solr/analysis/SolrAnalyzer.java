@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2000-2012 Liferay, Inc. All rights reserved.
+ * Copyright (c) 2000-2013 Liferay, Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -40,15 +40,15 @@ public class SolrAnalyzer extends Analyzer {
 		_analyzers.put(fieldName, analyzer);
 	}
 
-	public Analyzer getAnalyzer(String fieldName) {
-		Analyzer analyzer = _analyzers.get(fieldName);
+	public Analyzer getAnalyzer(String locale) {
+		Analyzer analyzer = _analyzers.get(locale);
 
 		if (analyzer != null) {
 			return analyzer;
 		}
 
 		for (String key : _analyzers.keySet()) {
-			if (Pattern.matches(key, fieldName)) {
+			if (Pattern.matches(key, locale)) {
 				return _analyzers.get(key);
 			}
 		}
@@ -56,10 +56,10 @@ public class SolrAnalyzer extends Analyzer {
 		return _analyzer;
 	}
 
-	public TokenStream tokenStream(String fieldName, Reader reader) {
-		Analyzer analyzer = getAnalyzer(fieldName);
+	public TokenStream tokenStream(String locale, Reader reader) {
+		Analyzer analyzer = getAnalyzer(locale);
 
-		return analyzer.tokenStream(fieldName, reader);
+		return analyzer.tokenStream(locale, reader);
 	}
 
 	private Analyzer _analyzer;

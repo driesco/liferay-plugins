@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2000-2012 Liferay, Inc. All rights reserved.
+ * Copyright (c) 2000-2013 Liferay, Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
@@ -23,7 +23,7 @@ import java.util.Map;
  * @author Daniela Zapata
  * @author David Gonzalez
  */
-public class SolrCollationMaker implements CollationMaker {
+public class CollationMakerImpl implements CollationMaker {
 
 	public String createCollation(
 		Map<String, List<String>> mapSuggestions, List<String> tokens) {
@@ -40,8 +40,7 @@ public class SolrCollationMaker implements CollationMaker {
 						.concat(suggestion.substring(1));
 				}
 
-				collated = collated.concat(suggestion)
-					.concat(StringPool.SPACE);
+				collated = collated.concat(suggestion).concat(StringPool.SPACE);
 			}
 			else {
 				collated = collated.concat(token).concat(StringPool.SPACE);
@@ -54,4 +53,5 @@ public class SolrCollationMaker implements CollationMaker {
 
 		return collated;
 	}
+
 }
