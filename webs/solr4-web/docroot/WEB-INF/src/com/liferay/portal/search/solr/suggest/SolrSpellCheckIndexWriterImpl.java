@@ -12,7 +12,7 @@
  * details.
  */
 
-package com.liferay.portal.search.solr;
+package com.liferay.portal.search.solr.suggest;
 
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
@@ -23,12 +23,14 @@ import com.liferay.portal.kernel.search.SpellCheckIndexWriter;
 import com.liferay.portal.kernel.util.LocaleUtil;
 import com.liferay.portal.kernel.util.StringBundler;
 import com.liferay.portal.kernel.util.StringPool;
+import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.util.portlet.PortletProps;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -39,10 +41,11 @@ import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.common.SolrInputDocument;
 
 /**
+ * @author Daniela Zapata
+ * @author David Gonzalez
  * @author Michael C. Han
  */
-public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
-	implements SpellCheckIndexWriter {
+public class SolrSpellCheckIndexWriterImpl implements SpellCheckIndexWriter {
 
 	public void deleteDocuments() throws SearchException {
 		try {
@@ -53,7 +56,7 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 			}
 		}
 		catch (Exception e) {
-			e.printStackTrace();
+			throw new SearchException("Unable to delete documents", e);
 		}
 	}
 
@@ -80,6 +83,7 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 		String dictionaryRelativePath = dictionaryDir.concat(
 			strLocale).concat(_DICTIONARY_EXTENSION_FILE);
 
+		//todo need to refactor this portion
 		String dictionaryCompletePath =
 			SolrSpellCheckIndexWriterImpl.class.getClassLoader().getResource(
 				dictionaryRelativePath).getFile();
@@ -104,8 +108,16 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 		doIndexDictionary(fileCustom, locale);
 	}
 
+	public void setBatchSize(int batchSize) {
+		_batchSize = batchSize;
+	}
+
 	public void setCommit(boolean commit) {
 		_commit = commit;
+	}
+
+	public void setNGramHolderBuilder(NGramHolderBuilder nGramHolderBuilder) {
+		_nGramHolderBuilder = nGramHolderBuilder;
 	}
 
 	public void setSolrServer(SolrServer solrServer) {
@@ -116,7 +128,7 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 		_supportedLocales = supportedLocales;
 	}
 
-	private void addDocument(
+	protected void addDocument(
 			Set<SolrInputDocument> solrDocuments,
 			Locale locale, String token, int weight)
 		throws SearchException {
@@ -136,30 +148,43 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 		solrInputDocument.addField("weight", String.valueOf(weight));
 		solrInputDocument.addField("locale", locale.toString());
 
-		addGram(solrInputDocument, token);
+		addNGram(solrInputDocument, token);
 
 		solrDocuments.add(solrInputDocument);
 	}
 
-	private void addGram(
+	protected void addNGram(
 			SolrInputDocument solrInputDocument, String text)
 		throws SearchException {
 
-		Map<String, Object> nGramsMap = buildNGrams(text);
+		NGramHolder nGramHolder = _nGramHolderBuilder.buildNGramHolder(text);
 
-		for (Map.Entry entry : nGramsMap.entrySet()) {
-			String key = (String)entry.getKey();
+		Map<String, List<String>> nGrams = nGramHolder.getNGrams();
+		Map<String, String> nGramEnds = nGramHolder.getNGramEnds();
+		Map<String, String> nGramStarts = nGramHolder.getNGramStarts();
 
-			if (entry.getValue() instanceof String) {
-				solrInputDocument.addField(key, entry.getValue());
-			}
+		addNGramField(solrInputDocument, nGramEnds);
+		addNGramField(solrInputDocument, nGramStarts);
+		addNGramFields(solrInputDocument, nGrams);
+	}
 
-			else if (entry.getValue() instanceof List) {
-				List<String> ngrams = (List)entry.getValue();
+	protected void addNGramField(
+		SolrInputDocument solrInputDocument, Map<String, String> nGrams) {
 
-				for (String ngram : ngrams) {
-					solrInputDocument.addField(key, ngram);
-				}
+		for (Map.Entry<String, String> nGramEntry : nGrams.entrySet()) {
+			solrInputDocument.addField(
+				nGramEntry.getKey(), nGramEntry.getValue());
+		}
+	}
+
+	protected void addNGramFields(
+		SolrInputDocument solrInputDocument, Map<String, List<String>> nGrams) {
+
+		for (Map.Entry<String, List<String>> nGramEntry : nGrams.entrySet()) {
+			String fieldName = nGramEntry.getKey();
+
+			for (String nGramValue : nGramEntry.getValue()) {
+				solrInputDocument.addField(fieldName, nGramValue);
 			}
 		}
 	}
@@ -169,50 +194,79 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 
 		Set<SolrInputDocument> solrDocuments = new HashSet<SolrInputDocument>();
 
+		BufferedReader bufferedReader = null;
+
 		try {
-			BufferedReader in = new BufferedReader(new FileReader(file));
-			String line;
-			int i = 0;
-			while ((line = in.readLine()) != null) {
-				i++;
-				String[] term = line.split(StringPool.SPACE);
+			FileReader fileReader = new FileReader(file);
+
+			bufferedReader = new BufferedReader(fileReader);
+
+			String line = bufferedReader.readLine();
+
+			if (line == null) {
+				return;
+			}
+
+			int lineCounter = 0;
+
+			do {
+				lineCounter++;
+
+				String[] term = StringUtil.split(line, StringPool.SPACE);
+
 				int weight = 0;
+
 				if (term.length > 1) {
-					weight = Integer.parseInt(term[1]);
+					try {
+						weight = Integer.parseInt(term[1]);
+					}
+					catch (NumberFormatException e) {
+						if (_log.isWarnEnabled()) {
+							_log.warn("Invalid weight for term: " + term[0]);
+						}
+					}
 				}
 
 				addDocument(solrDocuments, locale, term[0], weight);
 
-				if (i == _BATCH_NUM) {
+				line = bufferedReader.readLine();
+
+				if ((lineCounter == _batchSize) || (line == null)) {
 					_solrServer.add(solrDocuments);
+
 					if (_commit) {
 						_solrServer.commit();
 					}
 
 					solrDocuments.clear();
-					i = 0;
+
+					lineCounter = 0;
 				}
 			}
-
-			if (i != 0) {
-				_solrServer.add(solrDocuments);
-				if (_commit) {
-					_solrServer.commit();
-				}
-			}
-
-			in.close();
+			while (line != null);
 		}
 		catch (Exception e) {
 			if (_log.isDebugEnabled()) {
 				_log.debug("Unable to execute Solr query", e);
 			}
 
-			throw new SearchException(e.getMessage());
+			throw new SearchException(e.getMessage(), e);
+		}
+		finally {
+			if (bufferedReader != null) {
+				try {
+					bufferedReader.close();
+				}
+				catch (IOException ie) {
+                    if (_log.isDebugEnabled()) {
+                    	_log.debug("Unable to close dictionary file", ie);
+                    }
+				}
+			}
 		}
 	}
 
-	private static final int _BATCH_NUM = 10000;
+	private static final int _DEFAULT_BATCH_SIZE = 10000;
 
 	private static final String _CUSTOM_EXTENSION_FILE =".txt";
 	private static final String _CUSTOM_PREFIX ="custom";
@@ -223,8 +277,9 @@ public class SolrSpellCheckIndexWriterImpl extends SolrSpellCheckBaseImpl
 	private static Log _log = LogFactoryUtil.getLog(
 		SolrSpellCheckIndexWriterImpl.class);
 
+	private int _batchSize = _DEFAULT_BATCH_SIZE;
 	private boolean _commit;
-
+	private NGramHolderBuilder _nGramHolderBuilder;
 	private SolrServer _solrServer;
 	private Set<String> _supportedLocales;
 

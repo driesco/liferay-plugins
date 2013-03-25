@@ -14,6 +14,7 @@
 
 package com.liferay.portal.search.solr.analysis;
 
+import java.io.IOException;
 import java.io.Reader;
 
 import java.util.HashMap;
@@ -22,6 +23,10 @@ import java.util.regex.Pattern;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.core.LowerCaseFilter;
+import org.apache.lucene.analysis.core.StopFilter;
+import org.apache.lucene.analysis.standard.ClassicFilter;
+import org.apache.lucene.analysis.standard.ClassicTokenizer;
 
 /**
  * @author Daniela Zapata
@@ -56,10 +61,12 @@ public class SolrAnalyzer extends Analyzer {
 		return _analyzer;
 	}
 
-	public TokenStream tokenStream(String locale, Reader reader) {
-		Analyzer analyzer = getAnalyzer(locale);
+	@Override
+	protected TokenStreamComponents createComponents(
+		String fieldName, Reader reader) {
 
-		return analyzer.tokenStream(locale, reader);
+		//todo need to finish up...
+		return null;
 	}
 
 	private Analyzer _analyzer;

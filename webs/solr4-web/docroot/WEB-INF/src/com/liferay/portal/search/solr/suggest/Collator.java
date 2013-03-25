@@ -12,7 +12,7 @@
  * details.
  */
 
-package com.liferay.portal.search.solr;
+package com.liferay.portal.search.solr.suggest;
 
 import java.util.List;
 import java.util.Map;
@@ -21,9 +21,9 @@ import java.util.Map;
  * @author Daniela Zapata
  * @author David Gonzalez
  */
-public interface CollationMaker {
+public interface Collator {
 
-	public String createCollation(
+	public String collate(
 		Map<String, List<String>> mapSuggestions, List<String> tokens);
 
 }

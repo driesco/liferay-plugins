@@ -12,8 +12,9 @@
  * details.
  */
 
-package com.liferay.portal.search.solr;
+package com.liferay.portal.search.solr.suggest;
 
+import com.liferay.portal.kernel.util.StringBundler;
 import com.liferay.portal.kernel.util.StringPool;
 
 import java.util.List;
@@ -23,35 +24,45 @@ import java.util.Map;
  * @author Daniela Zapata
  * @author David Gonzalez
  */
-public class CollationMakerImpl implements CollationMaker {
+public class CollatorImpl implements Collator {
 
-	public String createCollation(
-		Map<String, List<String>> mapSuggestions, List<String> tokens) {
+	public String collate(
+		Map<String, List<String>> suggestionsMap, List<String> tokens) {
 
-		String collated = StringPool.BLANK;
+		StringBundler collationBundler = new StringBundler();
 
 		for (String token : tokens) {
-			if (!mapSuggestions.get(token).isEmpty()) {
+			List<String> suggestions = suggestionsMap.get(token);
 
-				String suggestion = mapSuggestions.get(token).get(0);
+			if ((suggestions != null) && (!suggestions.isEmpty())) {
 
+				String suggestion = suggestions.get(0);
+
+				//todo why is this the case?
 				if (Character.isUpperCase(token.charAt(0))) {
 					suggestion = suggestion.substring(0, 1).toUpperCase()
 						.concat(suggestion.substring(1));
 				}
 
-				collated = collated.concat(suggestion).concat(StringPool.SPACE);
+				collationBundler.append(suggestion);
+
+				collationBundler.append(StringPool.SPACE);
 			}
 			else {
-				collated = collated.concat(token).concat(StringPool.SPACE);
+				collationBundler.append(token);
+
+				collationBundler.append(StringPool.SPACE);
 			}
 		}
 
-		if (!collated.equals(StringPool.BLANK)) {
-			collated = collated.substring(0, collated.length()-1);
+		String collatedValue = collationBundler.toString();
+
+		//todo why is this here?
+		if (!collatedValue.equals(StringPool.BLANK)) {
+			collatedValue = collatedValue.substring(0, collationBundler.length() - 1);
 		}
 
-		return collated;
+		return collatedValue;
 	}
 
 }

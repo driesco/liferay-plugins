@@ -12,7 +12,7 @@
  * details.
  */
 
-package com.liferay.portal.search.solr;
+package com.liferay.portal.search.solr.suggest;
 
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
@@ -33,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.search.spell.StringDistance;
@@ -44,77 +45,18 @@ import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 
 /**
+ * @author Daniela Zapata
+ * @author David Gonzalez
  * @author Michael C. Han
  */
-public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
-	implements QuerySuggester {
+public class SolrQuerySuggesterImpl implements QuerySuggester {
 
-	public void searchTokenSimilars(
-			Locale locale, String token, SolrQuery solrQuery,
-			Map<String, Float> words)
-		throws SearchException {
-
-		solrQuery.addFilterQuery("spellcheck:true");
-		solrQuery.addFilterQuery("locale:" + locale.toString());
-
-		try {
-			QueryResponse queryResponse = _solrServer.query(
-				solrQuery, SolrRequest.METHOD.POST);
-
-			SolrDocumentList solrDocumentList = queryResponse.getResults();
-
-			int numResults = solrDocumentList.size();
-
-			Map<String, Float> tokenSuggestions = new HashMap<String, Float>();
-
-			boolean foundWord = false;
-
-			for (int i = 0; i < numResults; i++) {
-
-				SolrDocument solrDocument = solrDocumentList.get(i);
-
-				String suggestion = ((List<String>)solrDocument.get(
-					"word")).get(0);
-
-				String strWeight = ((List<String>)solrDocument.get(
-					"weight")).get(0);
-
-				float weight = Float.parseFloat(strWeight);
-
-				if (suggestion.equalsIgnoreCase(token)) {
-					words.put(token, weight);
-					foundWord = true;
-					break;
-				}
-
-				float distance = _stringDistance.getDistance(token, suggestion);
-
-				if (distance > _threshold) {
-					Float normalizedWeight = weight + distance;
-					tokenSuggestions.put(suggestion, normalizedWeight);
-				}
-			}
-
-			if (!foundWord) {
-				if (tokenSuggestions.isEmpty()) {
-					words.put(token, 0f);
-				}
-				else {
-					words.putAll(tokenSuggestions);
-				}
-			}
-		}
-		catch (Exception e) {
-			if (_log.isDebugEnabled()) {
-				_log.debug("Unable to execute Solr query", e);
-			}
-
-			throw new SearchException(e.getMessage());
-		}
+	public void setCollator(Collator collator) {
+		_collator = collator;
 	}
 
-	public void setCollationMaker(CollationMaker collationMaker) {
-		_collationMaker = collationMaker;
+	public void setNGramQueryBuilder(NGramQueryBuilder nGramQueryBuilder) {
+		_nGramQueryBuilder = nGramQueryBuilder;
 	}
 
 	public void setSolrServer(SolrServer solrServer) {
@@ -135,19 +77,20 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 		Map<String, List<String>> mapSuggestions = spellCheckKeywords(
 			searchContext, 1);
 
-		List<String> tokens = tokenize(
+		List<String> tokens = tokenizeKeywords(
 			searchContext.getKeywords(), searchContext.getLocale());
 
-		return _collationMaker.createCollation(mapSuggestions, tokens);
+		return _collator.collate(mapSuggestions, tokens);
 	}
 
 	public Map<String, List<String>> spellCheckKeywords(
 			SearchContext searchContext, int maxSuggestions)
 		throws SearchException {
 
-		Map<String, List<String>> suggestions = new HashMap<String, List<String>>();
+		Map<String, List<String>> suggestions =
+			new HashMap<String, List<String>>();
 
-		List<String> originals = tokenize(
+		List<String> originals = tokenizeKeywords(
 			searchContext.getKeywords(), searchContext.getLocale());
 
 		for (String original : originals) {
@@ -214,9 +157,7 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 			Locale locale, int maxSuggestions, String token)
 		throws SearchException {
 
-		Map<String, Object> nGramsMap = buildNGrams(token);
-
-		SolrQuery solrQuery = createGramsQuery(nGramsMap, token);
+		SolrQuery solrQuery = _nGramQueryBuilder.getNGramQuery(token);
 
 		Map<String, Float> words = new HashMap<String, Float>();
 
@@ -224,7 +165,8 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 
 		ValueComparator valueComparator = new ValueComparator(words);
 
-		TreeMap<String, Float> sortedWords = new TreeMap<String, Float>(valueComparator);
+		TreeMap<String, Float> sortedWords = new TreeMap<String, Float>(
+			valueComparator);
 
 		sortedWords.putAll(words);
 
@@ -233,65 +175,81 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 		return listWords.subList(0, Math.min(maxSuggestions, listWords.size()));
 	}
 
-	private String addGramQuery(String fieldName, String fieldValue) {
+	protected void searchTokenSimilars(
+			Locale locale, String token, SolrQuery solrQuery,
+			Map<String, Float> words)
+		throws SearchException {
 
-		StringBundler sb = new StringBundler(6);
+		solrQuery.addFilterQuery("spellcheck:true");
 
-		sb.append(fieldName);
-		sb.append(StringPool.COLON);
-		sb.append(fieldValue);
-		sb.append(StringPool.SPACE);
-		sb.append("OR");
-		sb.append(StringPool.SPACE);
+		solrQuery.addFilterQuery("locale:" + locale.toString());
 
-		return sb.toString();
-	}
+		try {
+			QueryResponse queryResponse = _solrServer.query(
+				solrQuery, SolrRequest.METHOD.POST);
 
-	private String addGramsQuery(String fieldName, List<String> grams) {
+			SolrDocumentList solrDocumentList = queryResponse.getResults();
 
-		StringBundler sb = new StringBundler(grams.size());
+			int numResults = solrDocumentList.size();
 
-		for (String gram : grams) {
-			sb.append(addGramQuery(fieldName, gram));
-		}
+			Map<String, Float> tokenSuggestions = new HashMap<String, Float>();
 
-		return sb.toString();
-	}
+			boolean foundWord = false;
 
-	private SolrQuery createGramsQuery(
-		Map<String, Object> nGramsMap, String token) {
+			for (int i = 0; i < numResults; i++) {
 
-		SolrQuery solrQuery = new SolrQuery();
+				SolrDocument solrDocument = solrDocumentList.get(i);
 
-		StringBundler sb = new StringBundler(10);
+				String suggestion = ((List<String>)solrDocument.get(
+					"word")).get(0);
 
-		for (Map.Entry entry : nGramsMap.entrySet()) {
-			String key = (String)entry.getKey();
+				String strWeight = ((List<String>)solrDocument.get(
+					"weight")).get(0);
 
-			if (entry.getValue() instanceof String) {
-				sb.append(addGramQuery(key, (String)entry.getValue()));
+				float weight = Float.parseFloat(strWeight);
+
+				if (suggestion.equalsIgnoreCase(token)) {
+					words.put(token, weight);
+					foundWord = true;
+					break;
+				}
+
+				float distance = _stringDistance.getDistance(token, suggestion);
+
+				if (distance > _threshold) {
+					Float normalizedWeight = weight + distance;
+					tokenSuggestions.put(suggestion, normalizedWeight);
+				}
 			}
-			else if (entry.getValue() instanceof List) {
-				sb.append(addGramsQuery(key, (List)entry.getValue()));
+
+			if (!foundWord) {
+				if (tokenSuggestions.isEmpty()) {
+					words.put(token, 0f);
+				}
+				else {
+					words.putAll(tokenSuggestions);
+				}
 			}
 		}
+		catch (Exception e) {
+			if (_log.isDebugEnabled()) {
+				_log.debug("Unable to execute Solr query", e);
+			}
 
-		String wordQuery = "word".concat(StringPool.COLON).concat(token);
-		sb.append(wordQuery);
-
-		solrQuery.setQuery(sb.toString());
-
-		return solrQuery;
+			throw new SearchException(e.getMessage());
+		}
 	}
 
-	private List<String> tokenize(String keyword, Locale locale)
+	protected List<String> tokenizeKeywords(String keywords, Locale locale)
 		throws SearchException {
 
 		List<String> result = new ArrayList<String>();
 
+		TokenStream tokenStream = null;
+
 		try {
-			TokenStream tokenStream = _analyzer.tokenStream(
-				locale.toString(), new StringReader(keyword));
+			tokenStream = _analyzer.tokenStream(
+				locale.toString(), new StringReader(keywords));
 
 			CharTermAttribute charTermAttribute = tokenStream.addAttribute(
 				CharTermAttribute.class);
@@ -303,10 +261,22 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 			}
 
 			tokenStream.end();
-			tokenStream.close();
 		}
 		catch (IOException e) {
 			throw new SearchException(e);
+		}
+		finally {
+			if (tokenStream != null) {
+				try {
+					tokenStream.close();
+				}
+				catch (IOException e) {
+					if (_log.isWarnEnabled()) {
+						_log.warn("Unable to close token stream", e);
+					}
+				}
+			}
+
 		}
 
 		return result;
@@ -315,14 +285,12 @@ public class SolrQuerySuggesterImpl extends SolrSpellCheckBaseImpl
 	private static Log _log = LogFactoryUtil.getLog(
 		SolrQuerySuggesterImpl.class);
 
-	private CollationMaker _collationMaker;
-
+	private Analyzer _analyzer;
+	private Collator _collator;
+	private NGramQueryBuilder _nGramQueryBuilder;
 	private SolrServer _solrServer;
-
 	private StringDistance _stringDistance;
-
 	private String _suggesterURL = "/select";
-
 	private float _threshold;
 
 }
