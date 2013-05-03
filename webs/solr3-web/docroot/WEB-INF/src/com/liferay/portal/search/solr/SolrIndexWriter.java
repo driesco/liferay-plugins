@@ -35,6 +35,7 @@ import java.util.Map;
 
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.common.SolrInputDocument;
+import org.apache.solr.common.params.ModifiableSolrParams;
 
 /**
  * @author Bruno Farache
@@ -145,6 +146,43 @@ public class SolrIndexWriter extends BaseIndexWriter {
 		}
 		catch (Exception e) {
 			_log.error(e, e);
+
+			throw new SearchException(e.getMessage());
+		}
+	}
+
+	public void indexDictionaries(long companyId) throws SearchException {
+
+		Locale[] locales = Locale.getAvailableLocales();
+
+		for (Locale locale : locales) {
+			indexDictionary(companyId, locale);
+		}
+	}
+
+	public void indexDictionary(long companyId, Locale locale)
+		throws SearchException {
+
+		StringBundler sb = new StringBundler(4);
+
+		sb.append("/spell_");
+		sb.append(locale.getLanguage());
+		sb.append(StringPool.UNDERLINE);
+		sb.append(locale.getCountry());
+
+		String requestHandler = sb.toString();
+
+		ModifiableSolrParams params = new ModifiableSolrParams();
+
+		params.set("qt", requestHandler);
+		params.set("spellcheck.build", true);
+		params.set("spellcheck.reload", true);
+
+		try {
+			_solrServer.query(params);
+		}
+		catch (Exception e) {
+			_log.error(e);
 
 			throw new SearchException(e.getMessage());
 		}
